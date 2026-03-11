@@ -1,0 +1,5 @@
+tmp/
+ext/sandbox_mruby/sandbox_build_config.rb.lock
+lib/sandbox_mruby/sandbox_mruby.bundle
+Gemfile.lock
+.ruby-version
