@@ -1,5 +1,7 @@
 /*
- * sandbox_mruby.c — Ruby C extension wrapper
+ * sandbox_mruby_process.c — Ruby C extension wrapper
+ *
+ * This file defines (or adds to) the normal ruby class SandboxMrubyProcess and defines some additional methods for it (see the bottom of this file for more info)
  *
  * This file ONLY includes ruby.h, never mruby.h.
  * All mruby interaction goes through the opaque sandbox_core.h API.
@@ -9,9 +11,9 @@
 #include "sandbox_core.h"
 
 /* Error class statics */
-static VALUE cSandboxMrubyError;
-static VALUE cSandboxMrubyTimeoutError;
-static VALUE cSandboxMrubyMemoryLimitError;
+static VALUE cSandboxMrubyProcessError;
+static VALUE cSandboxMrubyProcessTimeoutError;
+static VALUE cSandboxMrubyProcessMemoryLimitError;
 
 /* ------------------------------------------------------------------ */
 /* sandbox_value_t <-> CRuby VALUE conversion                          */
@@ -152,11 +154,11 @@ rb_to_sandbox_value(VALUE v, sandbox_value_t *out, char *errbuf, size_t errbuf_s
 }
 
 /* ------------------------------------------------------------------ */
-/* CRuby callback: dispatches tool calls to @tool_context              */
+/* CRuby callback: dispatches exposed object functions calls to @process_context              */
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    VALUE tool_context;  /* @tool_context object */
+    VALUE process_context;  /* @process_context object */
     VALUE method_name;   /* Symbol for the method */
     int   argc;
     VALUE *argv;
@@ -166,7 +168,7 @@ static VALUE
 cruby_protected_call(VALUE arg)
 {
     cruby_call_args_t *ca = (cruby_call_args_t *)arg;
-    return rb_funcallv(ca->tool_context, SYM2ID(ca->method_name), ca->argc, ca->argv);
+    return rb_funcallv(ca->process_context, SYM2ID(ca->method_name), ca->argc, ca->argv);
 }
 
 static sandbox_callback_result_t
@@ -189,12 +191,12 @@ sandbox_cruby_callback(const char *method_name,
         }
     }
 
-    /* Call @tool_context.send(method_name, *args) via rb_protect */
-    VALUE tool_context = rb_ivar_get(self, rb_intern("@tool_context"));
+    /* Call @process_context.send(method_name, *args) via rb_protect */
+    VALUE process_context = rb_ivar_get(self, rb_intern("@process_context"));
     VALUE method_sym = ID2SYM(rb_intern(method_name));
 
     cruby_call_args_t ca;
-    ca.tool_context = tool_context;
+    ca.process_context = process_context;
     ca.method_name = method_sym;
     ca.argc = argc;
     ca.argv = rb_args;
@@ -224,18 +226,18 @@ sandbox_cruby_callback(const char *method_name,
 }
 
 /* ------------------------------------------------------------------ */
-/* TypedData for SandboxMruby                                               */
+/* TypedData for SandboxMrubyProcess                                               */
 /* ------------------------------------------------------------------ */
 
 typedef struct {
     sandbox_state_t *state;
     int              closed;
-} rb_sandbox_mruby_t;
+} rb_sandbox_mruby_process_t;
 
 static void
-rb_sandbox_mruby_free(void *ptr)
+rb_sandbox_mruby_process_free(void *ptr)
 {
-    rb_sandbox_mruby_t *sb = (rb_sandbox_mruby_t *)ptr;
+    rb_sandbox_mruby_process_t *sb = (rb_sandbox_mruby_process_t *)ptr;
     if (sb) {
         if (sb->state) {
             sandbox_state_free(sb->state);
@@ -246,86 +248,86 @@ rb_sandbox_mruby_free(void *ptr)
 }
 
 static size_t
-rb_sandbox_mruby_memsize(const void *ptr)
+rb_sandbox_mruby_process_memsize(const void *ptr)
 {
-    return sizeof(rb_sandbox_mruby_t);
+    return sizeof(rb_sandbox_mruby_process_t);
 }
 
-static const rb_data_type_t sandbox_mruby_data_type = {
-    "SandboxMruby",
-    { NULL, rb_sandbox_mruby_free, rb_sandbox_mruby_memsize },
+static const rb_data_type_t sandbox_mruby_process_data_type = {
+    "SandboxMrubyProcess",
+    { NULL, rb_sandbox_mruby_process_free, rb_sandbox_mruby_process_memsize },
     NULL, NULL,
     RUBY_TYPED_FREE_IMMEDIATELY
 };
 
-static rb_sandbox_mruby_t *
-get_sandbox_mruby(VALUE self)
+static rb_sandbox_mruby_process_t *
+get_sandbox_mruby_process(VALUE self)
 {
-    rb_sandbox_mruby_t *sb;
-    TypedData_Get_Struct(self, rb_sandbox_mruby_t, &sandbox_mruby_data_type, sb);
+    rb_sandbox_mruby_process_t *sb;
+    TypedData_Get_Struct(self, rb_sandbox_mruby_process_t, &sandbox_mruby_process_data_type, sb);
     if (sb->closed) {
-        rb_raise(rb_eRuntimeError, "sandbox_mruby is closed");
+        rb_raise(rb_eRuntimeError, "sandbox_mruby_process is closed");
     }
     return sb;
 }
 
 /* ------------------------------------------------------------------ */
-/* SandboxMruby#initialize                                                  */
+/* SandboxMrubyProcess#initialize                                                  */
 /* ------------------------------------------------------------------ */
 
 static VALUE
-sandbox_mruby_alloc(VALUE klass)
+sandbox_mruby_process_alloc(VALUE klass)
 {
-    rb_sandbox_mruby_t *sb = calloc(1, sizeof(rb_sandbox_mruby_t));
-    return TypedData_Wrap_Struct(klass, &sandbox_mruby_data_type, sb);
+    rb_sandbox_mruby_process_t *sb = calloc(1, sizeof(rb_sandbox_mruby_process_t));
+    return TypedData_Wrap_Struct(klass, &sandbox_mruby_process_data_type, sb);
 }
 
 static VALUE
-sandbox_mruby_initialize(VALUE self, VALUE rb_timeout, VALUE rb_memory_limit)
+sandbox_mruby_process_initialize(VALUE self, VALUE rb_timeout, VALUE rb_memory_limit)
 {
-    rb_sandbox_mruby_t *sb;
-    TypedData_Get_Struct(self, rb_sandbox_mruby_t, &sandbox_mruby_data_type, sb);
+    rb_sandbox_mruby_process_t *sb;
+    TypedData_Get_Struct(self, rb_sandbox_mruby_process_t, &sandbox_mruby_process_data_type, sb);
 
     double timeout = NIL_P(rb_timeout) ? 0.0 : NUM2DBL(rb_timeout);
     size_t memory_limit = NIL_P(rb_memory_limit) ? 0 : (size_t)NUM2ULL(rb_memory_limit);
 
     sb->state = sandbox_state_new(timeout, memory_limit);
     if (!sb->state) {
-        rb_raise(rb_eRuntimeError, "failed to initialize mruby sandbox_mruby");
+        rb_raise(rb_eRuntimeError, "failed to initialize mruby sandbox_mruby_process");
     }
     sb->closed = 0;
 
-    /* Set up the callback so CRuby can handle tool calls */
+    /* Set up the callback so CRuby can handle calls to exposed objects functions */
     sandbox_state_set_callback(sb->state, sandbox_cruby_callback, (void *)self);
 
     return self;
 }
 
 /* ------------------------------------------------------------------ */
-/* SandboxMruby#_define_function                                            */
+/* SandboxMrubyProcess#_define_function                                            */
 /* ------------------------------------------------------------------ */
 
 static VALUE
-sandbox_mruby_define_function(VALUE self, VALUE rb_name)
+sandbox_mruby_process_define_function(VALUE self, VALUE rb_name)
 {
-    rb_sandbox_mruby_t *sb = get_sandbox_mruby(self);
+    rb_sandbox_mruby_process_t *sb = get_sandbox_mruby_process(self);
     const char *name = StringValueCStr(rb_name);
 
     if (sandbox_state_define_function(sb->state, name) != 0) {
-        rb_raise(rb_eRuntimeError, "too many tool functions (max %d)", 64);
+        rb_raise(rb_eRuntimeError, "too many exposed object functions (max %d)", 64);
     }
 
     return self;
 }
 
 /* ------------------------------------------------------------------ */
-/* SandboxMruby#_eval                                                       */
+/* SandboxMrubyProcess#_eval                                                       */
 /* ------------------------------------------------------------------ */
 
 static VALUE
-sandbox_mruby_eval(VALUE self, VALUE rb_code)
+sandbox_mruby_process_eval(VALUE self, VALUE rb_code)
 {
-    rb_sandbox_mruby_t *sb = get_sandbox_mruby(self);
+    rb_sandbox_mruby_process_t *sb = get_sandbox_mruby_process(self);
     const char *code = StringValueCStr(rb_code);
 
     sandbox_result_t result = sandbox_state_eval(sb->state, code);
@@ -335,13 +337,13 @@ sandbox_mruby_eval(VALUE self, VALUE rb_code)
         const char *msg = result.error ? result.error : "execution timeout exceeded";
         VALUE exc_msg = rb_str_new_cstr(msg);
         sandbox_result_free(&result);
-        rb_exc_raise(rb_exc_new_str(cSandboxMrubyTimeoutError, exc_msg));
+        rb_exc_raise(rb_exc_new_str(cSandboxMrubyProcessTimeoutError, exc_msg));
     }
     if (result.error_kind == SANDBOX_ERROR_MEMORY_LIMIT) {
         const char *msg = result.error ? result.error : "memory limit exceeded";
         VALUE exc_msg = rb_str_new_cstr(msg);
         sandbox_result_free(&result);
-        rb_exc_raise(rb_exc_new_str(cSandboxMrubyMemoryLimitError, exc_msg));
+        rb_exc_raise(rb_exc_new_str(cSandboxMrubyProcessMemoryLimitError, exc_msg));
     }
 
     VALUE value = result.value ? rb_str_new_cstr(result.value) : Qnil;
@@ -354,26 +356,26 @@ sandbox_mruby_eval(VALUE self, VALUE rb_code)
 }
 
 /* ------------------------------------------------------------------ */
-/* SandboxMruby#reset!                                                      */
+/* SandboxMrubyProcess#reset!                                                      */
 /* ------------------------------------------------------------------ */
 
 static VALUE
-sandbox_mruby_reset(VALUE self)
+sandbox_mruby_process_reset(VALUE self)
 {
-    rb_sandbox_mruby_t *sb = get_sandbox_mruby(self);
+    rb_sandbox_mruby_process_t *sb = get_sandbox_mruby_process(self);
     sandbox_state_reset(sb->state);
     return self;
 }
 
 /* ------------------------------------------------------------------ */
-/* SandboxMruby#close                                                       */
+/* SandboxMrubyProcess#close                                                       */
 /* ------------------------------------------------------------------ */
 
 static VALUE
-sandbox_mruby_close(VALUE self)
+sandbox_mruby_process_close(VALUE self)
 {
-    rb_sandbox_mruby_t *sb;
-    TypedData_Get_Struct(self, rb_sandbox_mruby_t, &sandbox_mruby_data_type, sb);
+    rb_sandbox_mruby_process_t *sb;
+    TypedData_Get_Struct(self, rb_sandbox_mruby_process_t, &sandbox_mruby_process_data_type, sb);
 
     if (!sb->closed) {
         if (sb->state) {
@@ -386,10 +388,10 @@ sandbox_mruby_close(VALUE self)
 }
 
 static VALUE
-sandbox_mruby_closed_p(VALUE self)
+sandbox_mruby_process_closed_p(VALUE self)
 {
-    rb_sandbox_mruby_t *sb;
-    TypedData_Get_Struct(self, rb_sandbox_mruby_t, &sandbox_mruby_data_type, sb);
+    rb_sandbox_mruby_process_t *sb;
+    TypedData_Get_Struct(self, rb_sandbox_mruby_process_t, &sandbox_mruby_process_data_type, sb);
     return sb->closed ? Qtrue : Qfalse;
 }
 
@@ -398,24 +400,25 @@ sandbox_mruby_closed_p(VALUE self)
 /* ------------------------------------------------------------------ */
 
 void
-Init_sandbox_mruby(void)
+Init_sandbox_mruby_process(void)
 {
-    VALUE cSandboxMruby = rb_define_class("SandboxMruby", rb_cObject);
+    VALUE cSandboxMrubyProcess = rb_define_class("SandboxMrubyProcess", rb_cObject);
 
     /* Error class hierarchy */
-    cSandboxMrubyError = rb_define_class_under(cSandboxMruby, "Error", rb_eStandardError);
-    cSandboxMrubyTimeoutError = rb_define_class_under(cSandboxMruby, "TimeoutError", cSandboxMrubyError);
-    cSandboxMrubyMemoryLimitError = rb_define_class_under(cSandboxMruby, "MemoryLimitError", cSandboxMrubyError);
+    cSandboxMrubyProcessError = rb_define_class_under(cSandboxMrubyProcess, "Error", rb_eStandardError);
+    cSandboxMrubyProcessTimeoutError = rb_define_class_under(cSandboxMrubyProcess, "TimeoutError", cSandboxMrubyProcessError);
+    cSandboxMrubyProcessMemoryLimitError = rb_define_class_under(cSandboxMrubyProcess, "MemoryLimitError", cSandboxMrubyProcessError);
 
-    rb_gc_register_mark_object(cSandboxMrubyError);
-    rb_gc_register_mark_object(cSandboxMrubyTimeoutError);
-    rb_gc_register_mark_object(cSandboxMrubyMemoryLimitError);
+    rb_gc_register_mark_object(cSandboxMrubyProcessError);
+    rb_gc_register_mark_object(cSandboxMrubyProcessTimeoutError);
+    rb_gc_register_mark_object(cSandboxMrubyProcessMemoryLimitError);
 
-    rb_define_alloc_func(cSandboxMruby, sandbox_mruby_alloc);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_init",            sandbox_mruby_initialize,      2);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_eval",            sandbox_mruby_eval,            1);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_define_function", sandbox_mruby_define_function, 1);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_reset!",           sandbox_mruby_reset,           0);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_close",            sandbox_mruby_close,           0);
-    rb_define_method(cSandboxMruby, "_sandbox_mruby_closed?",          sandbox_mruby_closed_p,        0);
+    rb_define_alloc_func(cSandboxMrubyProcess, sandbox_mruby_process_alloc);
+
+    rb_define_method(cSandboxMrubyProcess, "_mruby_init",            sandbox_mruby_process_initialize,      2);
+    rb_define_method(cSandboxMrubyProcess, "_mruby_eval",            sandbox_mruby_process_eval,            1);
+    rb_define_method(cSandboxMrubyProcess, "_mruby_define_function", sandbox_mruby_process_define_function, 1);
+    rb_define_method(cSandboxMrubyProcess, "_mruby_reset!",           sandbox_mruby_process_reset,           0);
+    rb_define_method(cSandboxMrubyProcess, "_mruby_close",            sandbox_mruby_process_close,           0);
+    rb_define_method(cSandboxMrubyProcess, "_mruby_closed?",          sandbox_mruby_process_closed_p,        0);
 }

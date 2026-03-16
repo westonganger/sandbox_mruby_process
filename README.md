@@ -32,3 +32,33 @@ bundle exec rake mruby:clean
 bundle exec rake compile
 
 ```
+
+
+## Usage
+
+#### Evaluating Code
+
+```
+process = SandboxMrubyProcess.new
+
+something = "foobar"
+
+process.expose_object(something)
+
+process.eval("something")
+# => {value: "something", output: "", error: nil}
+
+process.eval("something = 'baz'")
+# => {value: "baz", output: "", error: nil}
+
+process.eval("puts 'some_text'")
+# => {value: nil, output: "some_text", error: nil}
+```
+
+#### Firing up a REPL (in a terminal or console)
+
+TODO
+
+#### Firing up a REPL (in any erb webpage)
+
+TODO

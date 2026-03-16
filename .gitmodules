@@ -1,3 +1,3 @@
-[submodule "ext/sandbox_mruby/mruby"]
-	path = ext/sandbox_mruby/mruby
+[submodule "ext/sandbox_mruby_process/mruby"]
+	path = ext/sandbox_mruby_process/mruby
 	url = https://github.com/mruby/mruby.git

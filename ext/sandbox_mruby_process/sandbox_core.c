@@ -411,7 +411,7 @@ sandbox_value_to_mrb(mrb_state *mrb, const sandbox_value_t *val)
 }
 
 /* ------------------------------------------------------------------ */
-/* Trampoline: single C function for all registered tool functions     */
+/* Trampoline: single C function for all exposed object functions     */
 /* ------------------------------------------------------------------ */
 
 static sandbox_state_t *
@@ -425,7 +425,7 @@ sandbox_function_trampoline(mrb_state *mrb, mrb_value self)
 {
     sandbox_state_t *state = get_sandbox_state(mrb);
     if (!state || !state->callback) {
-        mrb_raise(mrb, mrb_class_get(mrb, "RuntimeError"), "no tool callback registered");
+        mrb_raise(mrb, mrb_class_get(mrb, "RuntimeError"), "no exposed object callback registered");
         return mrb_nil_value();
     }
 
@@ -598,9 +598,9 @@ sandbox_setup_mrb(sandbox_state_t *state)
 {
     /* Override Kernel#print, define Kernel#puts, override Kernel#p */
     struct RClass *kernel = state->mrb->kernel_module;
-    mrb_define_method(state->mrb, kernel, "sandbox_mruby_print", sandbox_mrb_print, MRB_ARGS_ANY());
-    mrb_define_method(state->mrb, kernel, "sandbox_mruby_puts",  sandbox_mrb_puts,  MRB_ARGS_ANY());
-    mrb_define_method(state->mrb, kernel, "sandbox_mruby_p",     sandbox_mrb_p,     MRB_ARGS_ANY());
+    mrb_define_method(state->mrb, kernel, "print", sandbox_mrb_print, MRB_ARGS_ANY());
+    mrb_define_method(state->mrb, kernel, "puts",  sandbox_mrb_puts,  MRB_ARGS_ANY());
+    mrb_define_method(state->mrb, kernel, "p",     sandbox_mrb_p,     MRB_ARGS_ANY());
 
     /* Re-register tool functions (survives reset) */
     register_functions_in_mrb(state);

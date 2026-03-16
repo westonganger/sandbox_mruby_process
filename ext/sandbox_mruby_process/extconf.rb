@@ -24,7 +24,7 @@ unless File.exist?(File.join(mruby_build_dir, "lib", "libmruby.a"))
   system("cd #{mruby_dir} && MRUBY_CONFIG=#{build_config} rake -f #{mruby_dir}/Rakefile -j1") || abort("mruby build failed")
 end
 
-# mruby headers (only used by sandbox_core.c, not sandbox_mruby.c)
+# mruby headers (only used by sandbox_core.c, not sandbox_mruby_process.c)
 $INCFLAGS << " -I#{File.join(mruby_dir, 'include')}"
 $INCFLAGS << " -I#{File.join(mruby_build_dir, 'include')}"
 
@@ -36,7 +36,7 @@ $CFLAGS << " -DMRB_USE_DEBUG_HOOK"
 
 # Both .c files in the extension directory
 $srcs = [
-  File.join(ext_dir, "sandbox_mruby.c"),
+  File.join(ext_dir, "sandbox_mruby_process.c"),
   File.join(ext_dir, "sandbox_core.c")
 ]
 
@@ -45,4 +45,4 @@ $LDFLAGS << " -L#{File.join(mruby_build_dir, 'lib')}"
 $libs << " #{File.join(mruby_build_dir, 'lib', 'libmruby.a')}"
 $libs << " -lm"
 
-create_makefile("sandbox_mruby/sandbox_mruby")
+create_makefile("sandbox_mruby_process/sandbox_mruby_process")

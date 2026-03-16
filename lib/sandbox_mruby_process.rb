@@ -1,7 +1,15 @@
 begin
-  require_relative "sandbox_mruby/sandbox_mruby"
+  require_relative "sandbox_mruby_process_ext/sandbox_mruby_process.bundle"
+
+  ### Methods defined by sandbox_mruby_process native extension:
+  # SandboxMrubyProcess#_mruby_init
+  # SandboxMrubyProcess#_mruby_eval
+  # SandboxMrubyProcess#_mruby_define_function
+  # SandboxMrubyProcess#_mruby_reset!
+  # SandboxMrubyProcess#_mruby_close
+  # SandboxMrubyProcess#_mruby_closed?
 rescue LoadError
-  raise LoadError.new("SandboxMruby native extension not found. Run `rake compile` first (from a git clone, run `rake setup`).")
+  raise LoadError.new("sandbox_mruby_process native extension not found. Run `rake compile` first (from a git clone, run `rake setup`).")
 end
 
 class SandboxMrubyProcess
@@ -15,12 +23,12 @@ class SandboxMrubyProcess
   end
 
   def initialize(timeout: nil, memory_limit: nil)
-    @timeout = timeout || self.class.global_config.fetch(timeout)
+    @timeout = timeout || self.class.global_config.fetch(:timeout)
     @memory_limit = memory_limit || self.class.global_config.fetch(:memory_limit)
 
     @process_context = Object.new
 
-    _sandbox_mruby_init(@timeout, @memory_limit)
+    _mruby_init(@timeout, @memory_limit)
   end
 
   def expose_object(obj)
@@ -30,12 +38,12 @@ class SandboxMrubyProcess
         obj.call(*args)
       end
 
-      _sandbox_mruby_define_function(obj.name)
+      _mruby_define_function(obj.name.to_s)
     when Module, Class
       @process_context.extend(obj)
 
       obj.instance_methods(false).each do |name|
-        _sandbox_muby_define_function(name.to_s)
+        _mruby_define_function(name.to_s)
       end
     else
       #instances
@@ -46,7 +54,7 @@ class SandboxMrubyProcess
           target.public_send(name, *args)
         end
 
-        _sandbox_mruby_define_function(name.to_s)
+        _mruby_define_function(name.to_s)
       end
     end
 
@@ -54,43 +62,45 @@ class SandboxMrubyProcess
   end
 
   def close
-    _sandbox_mruby_close
+    _mruby_close
   end
 
   def closed?
-    _sandbox_mruby_closed?
+    _mruby_closed?
   end
 
   def reset!
-    _sandbox_mruby_reset!
+    _mruby_reset!
   end
 
-  def eval(ruby_code)
-    value, output, error = _sandbox_mruby_eval(code)
+  def eval_code(code)
+    # code = code
+    #   .gsub(" puts", " print")
+    #   .gsub(/^puts/, "print")
 
-    return [value, output, error]
-  end
+    value, output, error = _mruby_eval(code)
 
-  def run_code(code)
-    eval(code)
+    # if value == "nil"
+    #   value = nil
+    # end
 
-    if result[:error]
-      return "Error: #{result[:error]}"
+    if output == ""
+      output = nil
     end
 
-    run_output = ""
-
-    if !result[:output].empty?
-      run_output << "#{result[:output]}"
-    end
-
-    run_output << "#{result[:value]}"
-
-    run_output
+    return {
+      value: value,
+      output: output,
+      error: error,
+    }
   end
 
   def repl
-    require "readline"
+    begin
+      require "readline"
+    rescue LoadError
+      raise LoadError.new("Failed to require 'readline'. If you would like to use the repl feature then please add the gem readline to your projects Gemfile.")
+    end
 
     help_text = <<~HELP
       Try asking things like:
@@ -105,7 +115,7 @@ class SandboxMrubyProcess
     HELP
 
     puts "MRuby REPL"
-    puts "Type 'exit' to quit\n\n"
+    puts "Type 'exit' to quit"
     puts "Type 'help' for more info\n\n"
 
     prompt = "sandbox_mruby> "
@@ -134,14 +144,18 @@ class SandboxMrubyProcess
       line << "\n"
       input << "\n"
 
-      result = eval(input)
+      result = eval_code(input)
 
       if result[:error]&.match?(/SyntaxError.*unexpected.*\$end|unexpected end of file/i)
         next # incomplete input, keep reading input on new line
       end
 
-      if !result[:output].empty?
-        sandbox_mruby_print result[:output]
+
+      ### TODO puts not working with 'irb' because it overwrites Kernel#puts
+      ### how does it work above though?
+
+      if result[:output] && !result[:output].empty?
+        puts result[:output]
       end
 
       if result[:error]

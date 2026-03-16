@@ -1,0 +1,11 @@
+---
+mruby:
+  version: 4.0.0
+  release_no: 40000
+builds:
+  host:
+    https://github.com/mattn/mruby-json.git:
+      url: https://github.com/mattn/mruby-json.git
+      branch: master
+      commit: f99d9428025469f2400f93c53b185f65f963e507
+      version: 0.0.0
